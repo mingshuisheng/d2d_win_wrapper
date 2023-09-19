@@ -4,7 +4,7 @@ use windows::core::w;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::{D2D1_DRAW_TEXT_OPTIONS_NO_SNAP, D2D1_ELLIPSE, D2D1_LAYER_PARAMETERS, ID2D1PathGeometry};
 use windows::Win32::Graphics::DirectComposition::{IDCompositionDevice, IDCompositionTarget, IDCompositionVisual};
-use windows::Win32::Graphics::DirectWrite::{DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_METRICS, IDWriteFactory2, IDWriteTextFormat1};
+use windows::Win32::Graphics::DirectWrite::{DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_METRICS, IDWriteFactory2, IDWriteTextFormat1, IDWriteTextLayout};
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Dxgi::IDXGISwapChain1;
 use crate::{CircleProperty, Color, EllipseProperty, GradientColorProperty, LinearGradientProperty, LineProperty, RadialGradientProperty, RectProperty, TextProperty};
@@ -86,39 +86,58 @@ impl Graphic {
 // draw shape
 
 impl Graphic {
+    pub(crate) unsafe fn create_text_layout(&self, text_property: TextProperty) -> Result<IDWriteTextLayout> {
+        let text = text_property.text.as_ref().encode_utf16().chain(once(0)).collect::<Vec<u16>>();
+        let fallback = self.write_factory.GetSystemFontFallback()?;
+        let font_family = match &text_property.font_family {
+            Some(font_family) => PCWSTR::from_raw(font_family.as_ref().encode_utf16().chain(once(0)).collect::<Vec<u16>>().as_ptr()),
+            _ => w!("Microsoft YaHei"),
+        };
+        let text_format = self.write_factory.CreateTextFormat(
+            font_family,
+            None,
+            text_property.font_weight.into(),
+            text_property.font_style.into(),
+            text_property.font_stretch.into(),
+            text_property.font_size,
+            w!(""),
+        )?;
+        let text_format = text_format.cast::<IDWriteTextFormat1>()?;
+        text_format.SetFontFallback(Some(&fallback))?;
+        text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
+        text_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+        let text_layout = self.write_factory.CreateTextLayout(text.as_slice(), &text_format, f32::MAX, f32::MAX)?;
+        let mut text_metrics = DWRITE_TEXT_METRICS::default();
+        text_layout.GetMetrics(&mut text_metrics)?;
+        let max_width = text_metrics.width;
+        let max_height = text_metrics.height;
+        text_layout.SetMaxWidth(max_width)?;
+        text_layout.SetMaxHeight(max_height)?;
+        // text_layout.SetUnderline(true, DWRITE_TEXT_RANGE{startPosition: 0, length: text_property.text.as_ref().len() as u32}).unwrap();
+
+        Ok(text_layout)
+    }
+
+    // pub fn get_text_metrics(&self, text_property: TextProperty) -> Result<DWRITE_TEXT_METRICS> {
+    //     unsafe {
+    //         let text_layout = self.create_text_layout(text_property)?;
+    //         let mut text_metrics = DWRITE_TEXT_METRICS::default();
+    //         text_layout.GetMetrics(&mut text_metrics)?;
+    //         Ok(text_metrics)
+    //     }
+    // }
+
     pub(crate) fn draw_text(&self, text_property: TextProperty) -> Result<()> {
         unsafe {
             let context = &self.render_target;
-            let text = text_property.text.as_ref().encode_utf16().chain(once(0)).collect::<Vec<u16>>();
-            let fallback = self.write_factory.GetSystemFontFallback().unwrap();
-            let font_family = match text_property.font_family {
-                Some(font_family) => PCWSTR::from_raw(font_family.as_ref().encode_utf16().chain(once(0)).collect::<Vec<u16>>().as_ptr()),
-                _ => w!("Microsoft YaHei"),
-            };
-            let text_format = self.write_factory.CreateTextFormat(
-                font_family,
-                None,
-                text_property.font_weight.into(),
-                text_property.font_style.into(),
-                text_property.font_stretch.into(),
-                text_property.font_size,
-                w!(""),
-            ).unwrap();
-            let text_format = text_format.cast::<IDWriteTextFormat1>().unwrap();
-            text_format.SetFontFallback(Some(&fallback)).unwrap();
-            text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER).unwrap();
-            text_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER).unwrap();
-            let text_layout = self.write_factory.CreateTextLayout(text.as_slice(), &text_format, f32::MAX, f32::MAX).unwrap();
-            let mut text_metrics = DWRITE_TEXT_METRICS::default();
-            text_layout.GetMetrics(&mut text_metrics).unwrap();
-            let max_width = text_metrics.width;
-            let max_height = text_metrics.height;
-            text_layout.SetMaxWidth(max_width).unwrap();
-            text_layout.SetMaxHeight(max_height).unwrap();
-            // text_layout.SetUnderline(true, DWRITE_TEXT_RANGE{startPosition: 0, length: text_property.text.as_ref().len() as u32}).unwrap();
 
-            let brush = context.create_brush(text_property.color, GradientColorProperty::None);
-            context.DrawTextLayout(text_property.position, &text_layout, &brush, D2D1_DRAW_TEXT_OPTIONS_NO_SNAP);
+            let text_color = text_property.color.clone();
+            let text_position = text_property.position.clone();
+
+            let text_layout = self.create_text_layout(text_property)?;
+
+            let brush = context.create_brush(text_color, GradientColorProperty::None);
+            context.DrawTextLayout(text_position, &text_layout, &brush, D2D1_DRAW_TEXT_OPTIONS_NO_SNAP);
         }
         Ok(())
     }
