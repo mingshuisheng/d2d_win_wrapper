@@ -14,6 +14,10 @@ pub struct TextProperty {
     #[builder(default, setter(into))]
     pub height: Option<f32>,
     #[builder(default, setter(into))]
+    pub line_height: Option<f32>,
+    #[builder(default, setter(into))]
+    pub underline: bool,
+    #[builder(default, setter(into))]
     pub font_weight: FontWeight,
     #[builder(default, setter(into))]
     pub position: Direct2DPoint,

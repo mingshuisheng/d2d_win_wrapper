@@ -4,10 +4,10 @@ use windows::core::w;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::{D2D1_DRAW_TEXT_OPTIONS_NO_SNAP, D2D1_ELLIPSE, D2D1_LAYER_PARAMETERS, ID2D1PathGeometry};
 use windows::Win32::Graphics::DirectComposition::{IDCompositionDevice, IDCompositionTarget, IDCompositionVisual};
-use windows::Win32::Graphics::DirectWrite::{DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_METRICS, IDWriteFactory2, IDWriteTextFormat1, IDWriteTextLayout};
+use windows::Win32::Graphics::DirectWrite::{DWRITE_LINE_METRICS, DWRITE_LINE_SPACING_METHOD_UNIFORM, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE, IDWriteFactory2, IDWriteTextFormat1, IDWriteTextLayout};
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Dxgi::IDXGISwapChain1;
-use crate::{CircleProperty, Color, EllipseProperty, GradientColorProperty, LinearGradientProperty, LineProperty, RadialGradientProperty, RectProperty, TextProperty};
+use crate::{CircleProperty, Color, EllipseProperty, GradientColorProperty, LinearGradientProperty, LineProperty, RadialGradientProperty, RectProperty, TextLayoutInfo, TextProperty};
 use crate::d2d::{create_write_factory, Factory};
 use crate::{create_point, Direct2DPoint, Direct2DRect};
 use super::RenderTarget;
@@ -86,6 +86,23 @@ impl Graphic {
 // draw shape
 
 impl Graphic {
+    unsafe fn get_baseline(text_layout: &IDWriteTextLayout) -> f32 {
+        let mut text_metrics = DWRITE_TEXT_METRICS::default();
+        let mut line_count = text_metrics.lineCount;
+        let mut raw_line_metrics = vec![DWRITE_LINE_METRICS::default(); line_count as usize];
+        let result = text_layout.GetLineMetrics(Some(raw_line_metrics.as_mut_slice()), &mut line_count);
+
+        if result.is_err() {
+            let mut raw_line_metrics = vec![DWRITE_LINE_METRICS::default(); line_count as usize];
+            let result = text_layout.GetLineMetrics(Some(raw_line_metrics.as_mut_slice()), &mut line_count);
+            if result.is_err() {
+                return 0.0;
+            }
+        }
+
+        raw_line_metrics.get(0).map(|lm| lm.baseline).unwrap_or(0.0)
+    }
+
     pub(crate) unsafe fn create_text_layout(&self, text_property: TextProperty) -> Result<IDWriteTextLayout> {
         let text = text_property.text.as_ref().encode_utf16().chain(once(0)).collect::<Vec<u16>>();
         let fallback = self.write_factory.GetSystemFontFallback()?;
@@ -122,8 +139,14 @@ impl Graphic {
         let max_height = text_property.height.unwrap_or(text_metrics.height);
         text_layout.SetMaxHeight(max_height.max(text_metrics.height))?;
 
+        if let Some(line_height) = text_property.line_height {
+            let baseline = Self::get_baseline(&text_layout);
+            text_layout.SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, text_property.font_size * line_height, baseline)?;
+        }
 
-        // text_layout.SetUnderline(true, DWRITE_TEXT_RANGE{startPosition: 0, length: text_property.text.as_ref().len() as u32}).unwrap();
+        if text_property.underline {
+            text_layout.SetUnderline(true, DWRITE_TEXT_RANGE{startPosition: 0, length: text_property.text.as_ref().len() as u32}).unwrap();
+        }
 
         Ok(text_layout)
     }
