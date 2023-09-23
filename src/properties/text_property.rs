@@ -18,6 +18,10 @@ pub struct TextProperty {
     #[builder(default, setter(into))]
     pub underline: bool,
     #[builder(default, setter(into))]
+    pub align: TextAlign,
+    #[builder(default, setter(into))]
+    pub vertical_align: TextVerticalAlign,
+    #[builder(default, setter(into))]
     pub font_weight: FontWeight,
     #[builder(default, setter(into))]
     pub position: Direct2DPoint,
@@ -30,6 +34,33 @@ pub struct TextProperty {
     #[builder(default, setter(into))]
     pub font_stretch: FontStretch,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextAlign {
+    Left,
+    Center,
+    Right,
+}
+
+impl Default for TextAlign {
+    fn default() -> Self {
+        Self::Left
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextVerticalAlign {
+    Top,
+    Center,
+    Bottom,
+}
+
+impl Default for TextVerticalAlign {
+    fn default() -> Self {
+        Self::Top
+    }
+}
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FontWeight {
